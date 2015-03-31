@@ -5541,6 +5541,7 @@ int mysqld_main(int argc, char **argv)
 #if defined(_WIN32) || defined(HAVE_SMEM)
   handle_connections_methods();
 #else
+  //处理用户连接，主要的处理函数
   handle_connections_sockets();
 #endif /* _WIN32 || HAVE_SMEM */
 
@@ -6060,6 +6061,11 @@ inline void kill_broken_server()
 
 void handle_connections_sockets()
 {
+ /*
+ * 处理socket连接，除了Unix Domain Socket以外，
+ * 优先使用poll，没有poll的情况下使用select，
+ * 这里只关注poll的情况
+ */
   MYSQL_SOCKET sock= mysql_socket_invalid();
   MYSQL_SOCKET new_sock= mysql_socket_invalid();
   uint error_count=0;
@@ -6109,12 +6115,13 @@ void handle_connections_sockets()
   while (!abort_loop)
   {
 #ifdef HAVE_POLL
+    //标准的poll处理
     retval= poll(fds, socket_count, -1);
 #else
     readFDs=clientFDs;
     retval= select((int) 0,&readFDs,0,0,0);
 #endif
-
+    //poll或select出错的返回值均未负，所以可以一并处理
     if (retval < 0)
     {
       if (socket_errno != SOCKET_EINTR)
@@ -6132,6 +6139,7 @@ void handle_connections_sockets()
       continue;
     }
 
+    //检查是否结束网络监听循环
     if (abort_loop)
     {
       MAYBE_BROKEN_SYSCALL;
@@ -6140,11 +6148,14 @@ void handle_connections_sockets()
 
     /* Is this a new connection request ? */
 #ifdef HAVE_POLL
+    //socket_count大于0表示有新的连接
     for (int i= 0; i < socket_count; ++i) 
     {
       if (fds[i].revents & POLLIN)
       {
+        //对新连接做初始化操作
         sock= pfs_fds[i];
+        //获取文件描述符标记 F_GETFL
         flags= fcntl(mysql_socket_getfd(sock), F_GETFL, 0);
         break;
       }
@@ -6168,6 +6179,7 @@ void handle_connections_sockets()
     }
 #endif // HAVE_POLL
 
+//设置socket为非阻塞
 #if !defined(NO_FCNTL_NONBLOCK)
     if (!(test_flags & TEST_BLOCKING))
     {
@@ -6225,6 +6237,7 @@ void handle_connections_sockets()
           mysql_socket_getfd(sock) == mysql_socket_getfd(extra_ip_sock))
       {
 	struct request_info req;
+    //设置SIGCHLD信号时使用系统默认行为，因为有可能父进程会默认忽略SIGCHID信号
 	signal(SIGCHLD, SIG_DFL);
 	request_init(&req, RQ_DAEMON, libwrapName, RQ_FILE,
                      mysql_socket_getfd(new_sock), NULL);
