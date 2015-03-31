@@ -5189,6 +5189,7 @@ static void test_lc_time_sz()
 #ifdef __WIN__
 int win_main(int argc, char **argv)
 #else
+// Linux的主函数
 int mysqld_main(int argc, char **argv)
 #endif
 {
@@ -5196,15 +5197,18 @@ int mysqld_main(int argc, char **argv)
     Perform basic thread library and malloc initialization,
     to be able to read defaults files and parse options.
   */
-  my_progname= argv[0];
+  // 下面是一些全局的变量，用来标记MySQL的状态
+  my_progname= argv[0]; //获取程序名称
   sf_leaking_memory= 1; // no safemalloc memory leak reports if we exit early
   mysqld_server_started= mysqld_server_initialized= 0;
 
 #ifdef HAVE_NPTL
+  // 检查是否有NPTL库，getenv用来获取系统环境变量
   ld_assume_kernel_is_set= (getenv("LD_ASSUME_KERNEL") != 0);
 #endif
 #ifndef _WIN32
   // For windows, my_init() is called from the win specific mysqld_main
+  // 初始化系统库，文件掩码，线程，变量等
   if (my_init())                 // init my_sys library & pthreads
   {
     fprintf(stderr, "my_init() failed.");
@@ -5212,6 +5216,7 @@ int mysqld_main(int argc, char **argv)
   }
 #endif
 
+  // 初始化参数
   orig_argc= argc;
   orig_argv= argv;
   my_getopt_use_args_separator= TRUE;
@@ -5232,12 +5237,14 @@ int mysqld_main(int argc, char **argv)
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
   /*
     Initialize the array of performance schema instrument configurations.
+    PERFSCHEMA_STORAGE_ENGINE存储引擎
   */
   init_pfs_instrument_array();
 #endif /* WITH_PERFSCHEMA_STORAGE_ENGINE */
   /*
     Logs generated while parsing the command line
     options are buffered and printed later.
+    在解析命令行选项时生成的日志，先缓存起来，以后再输出
   */
   buffered_logs.init();
   my_getopt_error_reporter= buffered_option_error_reporter;
@@ -5249,6 +5256,7 @@ int mysqld_main(int argc, char **argv)
   int ho_error __attribute__((unused))= handle_early_options();
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
+  // PERFSCHEMA_STORAGE_ENGINE存储引擎
   if (ho_error == 0)
   {
     if (pfs_param.m_enabled  && !opt_help && !opt_bootstrap)
@@ -5283,6 +5291,7 @@ int mysqld_main(int argc, char **argv)
   /*
     Obtain the current performance schema instrumentation interface,
     if available.
+    获取性能数据库工具接口
   */
   if (PSI_hook)
   {
@@ -5311,14 +5320,19 @@ int mysqld_main(int argc, char **argv)
   }
 #endif /* HAVE_PSI_INTERFACE */
 
+  // 初始化错误日志锁, 调用include/mysql/psi/mysql_thread.h的inline_mysql_mutex_init函数
   init_error_log_mutex();
 
-  /* Initialize audit interface globals. Audit plugins are inited later. */
+  /* 
+    Initialize audit interface globals. Audit plugins are inited later.
+    初始化全局审计接口，审计插件会在稍后初始化
+  */
   mysql_audit_initialize();
 
   /*
     Perform basic logger initialization logger. Should be called after
     MY_INIT, as it initializes mutexes. Log tables are inited later.
+    初始化日志功能, 日志相关代码在sql/log.cc文件中
   */
   logger.init_base();
 
@@ -5352,11 +5366,14 @@ int mysqld_main(int argc, char **argv)
   }
 #endif
 
+  // 之前设置参数，这里初始化变量
   if (init_common_variables())
     unireg_abort(1);				// Will do exit
 
+  // 初始化信号处理
   init_signals();
 
+  /* 线程相关的代码在mysys/my_pthread.c文件中 */
   my_thread_stack_size= my_setstacksize(&connection_attrib,
                                         my_thread_stack_size);
 
@@ -5381,7 +5398,8 @@ int mysqld_main(int argc, char **argv)
   check_data_home(mysql_real_data_home);
   if (my_setwd(mysql_real_data_home, opt_abort ? 0 : MYF(MY_WME)) && !opt_abort)
     unireg_abort(1);				/* purecov: inspected */
-
+   
+  // 检测程序启动用户
   if ((user_info= check_user(mysqld_user)))
   {
 #if defined(HAVE_MLOCKALL) && defined(MCL_CURRENT)
@@ -5392,6 +5410,7 @@ int mysqld_main(int argc, char **argv)
       set_user(mysqld_user, user_info);
   }
 
+  // 检查binlog 和 server_id
   if (opt_bin_log && !global_system_variables.server_id)
   {
     global_system_variables.server_id= ::server_id= 1;
@@ -5411,9 +5430,11 @@ int mysqld_main(int argc, char **argv)
   Service.SetSlowStarting(slow_start_timeout);
 #endif
 
+  // 初始化内部的一些组件，如table_cache, query_cache等
   if (init_server_components())
     unireg_abort(1);
 
+  // 初始化网络模块，创建socket监听
   init_ssl();
   network_init();
 
@@ -5430,6 +5451,7 @@ int mysqld_main(int argc, char **argv)
   /*
     init signals & alarm
     After this we can't quit by a simple unireg_abort
+    初始化信号的警报, start_signal_handler()函数内创建了pid file
   */
   start_signal_handler();				// Creates pidfile
 
